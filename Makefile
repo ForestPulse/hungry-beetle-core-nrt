@@ -41,7 +41,7 @@ DINSTALL=$(HOME)/bin
 
 all: temp exe
 utils: alloc date dir string
-exe: disturbance_detection
+exe: disturbance_detection spectral_index
 .PHONY: temp all install install_ clean check
 
 ### TEMP
@@ -70,6 +70,8 @@ string: temp $(DUTILS)/string.c
 disturbance_detection: temp utils $(DMAIN)/disturbance_detection.c
 	$(GCC) $(CFLAGS) $(GDAL) -o $(DBIN)/disturbance_detection $(DMAIN)/disturbance_detection.c $(DMOD)/*.o $(LDGDAL)
 
+spectral_index: temp utils $(DMAIN)/spectral_index.c
+	$(GCC) $(CFLAGS) $(GDAL) -o $(DBIN)/spectral_index $(DMAIN)/spectral_index.c $(DMOD)/*.o $(LDGDAL)
   
 ### MISC
 
