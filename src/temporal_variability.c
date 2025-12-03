@@ -174,7 +174,7 @@ args_t args;
 
       if (images[i][p] == nodata_images[i]) continue;
 
-      // compute mean, variance, skewness, kurtosis
+      // compute mean, variance
       n++;
       var_recurrence((double)images[i][p], &mean, &var, (double)n);
 
