@@ -61,6 +61,9 @@ date: temp $(DUTILS)/date.c
 dir: temp $(DUTILS)/dir.c
 	$(GCC) $(CFLAGS) -c $(DUTILS)/dir.c -o $(DMOD)/dir.o
 
+quality: temp $(DUTILS)/quality.c
+	$(GCC) $(CFLAGS) -c $(DUTILS)/quality.c -o $(DMOD)/quality.o
+
 string: temp $(DUTILS)/string.c
 	$(GCC) $(CFLAGS) -c $(DUTILS)/string.c -o $(DMOD)/string.o
 
