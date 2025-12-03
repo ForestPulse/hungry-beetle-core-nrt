@@ -40,7 +40,7 @@ DINSTALL=$(HOME)/bin
 ### TARGETS
 
 all: temp exe
-utils: alloc date dir string
+utils: alloc date dir quality stats string
 exe: disturbance_detection spectral_index
 .PHONY: temp all install install_ clean check
 
@@ -64,6 +64,9 @@ dir: temp $(DUTILS)/dir.c
 quality: temp $(DUTILS)/quality.c
 	$(GCC) $(CFLAGS) -c $(DUTILS)/quality.c -o $(DMOD)/quality.o
 
+stats: temp $(DUTILS)/stats.c
+	$(GCC) $(CFLAGS) -c $(DUTILS)/stats.c -o $(DMOD)/stats.o
+
 string: temp $(DUTILS)/string.c
 	$(GCC) $(CFLAGS) -c $(DUTILS)/string.c -o $(DMOD)/string.o
 
@@ -75,7 +78,10 @@ disturbance_detection: temp utils $(DMAIN)/disturbance_detection.c
 
 spectral_index: temp utils $(DMAIN)/spectral_index.c
 	$(GCC) $(CFLAGS) $(GDAL) -o $(DBIN)/spectral_index $(DMAIN)/spectral_index.c $(DMOD)/*.o $(LDGDAL)
-  
+
+temporal_variability: temp utils $(DMAIN)/temporal_variability.c
+	$(GCC) $(CFLAGS) $(GDAL) -o $(DBIN)/temporal_variability $(DMAIN)/temporal_variability.c $(DMOD)/*.o $(LDGDAL) -lm
+
 ### MISC
 
 install_:
