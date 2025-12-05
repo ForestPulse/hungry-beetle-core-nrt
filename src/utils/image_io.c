@@ -22,6 +22,8 @@ void read_image(char *path, bandlist_t *bands, image_t *image){
   image->ny = GDALGetRasterYSize(fp_dataset);
   image->nc = image->nx*image->ny;
 
+  image->nb = GDALGetRasterCount(fp_dataset);
+
   if (bands != NULL){
     if (bands->n < 1){
       fprintf(stderr, "no bands specified for %s\n", path); exit(FAILURE);}
@@ -30,9 +32,7 @@ void read_image(char *path, bandlist_t *bands, image_t *image){
         fprintf(stderr, "band number %d out of range for %s\n", bands->number[b], path); exit(FAILURE);}
     }
     image->nb = bands->n;
-  } else {
-    image->nb = GDALGetRasterCount(fp_dataset);
-  }
+  } 
 
   alloc_2D((void***)&image->data, image->nb, image->nc, sizeof(short));
 
@@ -153,7 +153,7 @@ bool equal = true;
   }
 
   for (int i=0; i<6; i++){
-    if (image_1->geotran[i] != image_2->geotran[i]){
+    if (fabs(image_1->geotran[i] - image_2->geotran[i]) > 1e-6){
       fprintf(stderr, "Image geotransform parameters do not match at index %d: %f vs %f\n", i, image_1->geotran[i], image_2->geotran[i]);
       equal = false;
     }

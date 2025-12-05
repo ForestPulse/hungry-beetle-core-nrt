@@ -1,10 +1,12 @@
 # Libraries
 
-GDAL=-I/usr/include/gdal -L/usr/lib -Wl,-rpath=/usr/lib
+GDAL_INCLUDES = $(shell gdal-config --cflags)
+GDAL_LIBS = $(shell gdal-config --libs)
+GDAL_FLAGS = -Wl,-rpath=/usr/lib
 
-# Linked libs
-
-LDGDAL=-lgdal
+GSL_INCLUDES = $(shell gsl-config --cflags)
+GSL_LIBS = $(shell gsl-config --libs)
+GSL_FLAGS = -Wl,-rpath=/usr/lib/x86_64-linux-gnu -DHAVE_INLINE=1 -DGSL_RANGE_CHECK=0
 
 ### EXECUTABLES TO BE CHECKED PRE-COMPILATION
 
@@ -26,6 +28,9 @@ G11=g++ -std=c++11
 CFLAGS=-O3 -Wall -fopenmp
 #CFLAGS=-g -Wall -fopenmp
 
+INCLUDES=$(GDAL_INCLUDES) $(GSL_INCLUDES)
+FLAGS=$(CFLAGS) $(GDAL_FLAGS) $(GSL_FLAGS)
+LIBS=$(GDAL_LIBS) $(GSL_LIBS) -lm
 
 ### DIRECTORIES
 
@@ -40,8 +45,8 @@ DINSTALL=$(HOME)/bin
 ### TARGETS
 
 all: temp exe
-utils: alloc date dir image_io quality stats string
-exe: disturbance_detection spectral_index
+utils: alloc date dir harmonic image_io quality stats string
+exe: spectral_index temporal_variability reference_period # disturbance_detection
 .PHONY: temp all install install_ clean check
 
 ### TEMP
@@ -61,11 +66,14 @@ date: temp $(DUTILS)/date.c
 dir: temp $(DUTILS)/dir.c
 	$(GCC) $(CFLAGS) -c $(DUTILS)/dir.c -o $(DMOD)/dir.o
 
+harmonic: temp $(DUTILS)/harmonic.c
+	$(GCC) $(CFLAGS) -c $(DUTILS)/harmonic.c -o $(DMOD)/harmonic.o
+
 quality: temp $(DUTILS)/quality.c
 	$(GCC) $(CFLAGS) -c $(DUTILS)/quality.c -o $(DMOD)/quality.o
 
 image_io: temp $(DUTILS)/image_io.c
-	$(GCC) $(CFLAGS) $(GDAL) -c $(DUTILS)/image_io.c -o $(DMOD)/image_io.o
+	$(GCC) $(CFLAGS) $(GDAL_INCLUDES) $(GDAL_FLAGS) -c $(DUTILS)/image_io.c -o $(DMOD)/image_io.o
 
 stats: temp $(DUTILS)/stats.c
 	$(GCC) $(CFLAGS) -c $(DUTILS)/stats.c -o $(DMOD)/stats.o
@@ -77,13 +85,16 @@ string: temp $(DUTILS)/string.c
 ### EXECUTABLES
 
 disturbance_detection: temp utils $(DMAIN)/disturbance_detection.c
-	$(GCC) $(CFLAGS) $(GDAL) -o $(DBIN)/disturbance_detection $(DMAIN)/disturbance_detection.c $(DMOD)/*.o $(LDGDAL) -lm
+	$(GCC) $(FLAGS) $(INCLUDES) -o $(DBIN)/disturbance_detection $(DMAIN)/disturbance_detection.c $(DMOD)/*.o $(LIBS)
 
 spectral_index: temp utils $(DMAIN)/spectral_index.c
-	$(GCC) $(CFLAGS) $(GDAL) -o $(DBIN)/spectral_index $(DMAIN)/spectral_index.c $(DMOD)/*.o $(LDGDAL) -lm
+	$(GCC) $(FLAGS) $(INCLUDES) -o $(DBIN)/spectral_index $(DMAIN)/spectral_index.c $(DMOD)/*.o $(LIBS)
 
 temporal_variability: temp utils $(DMAIN)/temporal_variability.c
-	$(GCC) $(CFLAGS) $(GDAL) -o $(DBIN)/temporal_variability $(DMAIN)/temporal_variability.c $(DMOD)/*.o $(LDGDAL) -lm
+	$(GCC) $(FLAGS) $(INCLUDES) -o $(DBIN)/temporal_variability $(DMAIN)/temporal_variability.c $(DMOD)/*.o $(LIBS)
+
+reference_period: temp utils $(DMAIN)/reference_period.c
+	$(GCC) $(FLAGS) $(INCLUDES) -o $(DBIN)/reference_period $(DMAIN)/reference_period.c $(DMOD)/*.o $(LIBS)
 
 ### MISC
 

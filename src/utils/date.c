@@ -599,8 +599,8 @@ date_t d;
   init_date(&d);
 
   if (strlen(ptr) != 8){
-    *date = d;
-    return CANCEL;
+    fprintf(stderr, "No date detected in string %s.\n", string);
+    exit(FAILURE);
   }
 
   strncpy(cy, ptr,   4); cy[4] = '\0';
@@ -614,12 +614,12 @@ date_t d;
     d.year, d.month, d.day, d.doy, d.week, d.ce);
   #endif
 
-  if (d.year < 1900   || d.year > 2100){   init_date(&d); return CANCEL; }
-  if (d.month < 1     || d.month > 12){    init_date(&d); return CANCEL; }
-  if (d.day < 1       || d.day > 31){      init_date(&d); return CANCEL; }
-  if (d.doy < 1       || d.doy > 365){     init_date(&d); return CANCEL; }
-  if (d.week < 1      || d.week > 52){     init_date(&d); return CANCEL; }
-  if (d.ce < 1900*365 || d.ce > 2100*365){ init_date(&d); return CANCEL; }
+  if (d.year < 1900   || d.year > 2100){   fprintf(stderr, "Year %d out of range (1900-2100).\n", d.year); exit(FAILURE); }
+  if (d.month < 1     || d.month > 12){    fprintf(stderr, "Month %d out of range (1-12).\n", d.month); exit(FAILURE); }
+  if (d.day < 1       || d.day > 31){      fprintf(stderr, "Day %d out of range (1-31).\n", d.day); exit(FAILURE); }
+  if (d.doy < 1       || d.doy > 365){     fprintf(stderr, "Day of year %d out of range (1-365).\n", d.doy); exit(FAILURE); }
+  if (d.week < 1      || d.week > 52){     fprintf(stderr, "Week %d out of range (1-52).\n", d.week); exit(FAILURE); }
+  if (d.ce < 1900*365 || d.ce > 2100*365){ fprintf(stderr, "CE %d out of range (%d-%d).\n", d.ce, 1900*365, 2100*365); exit(FAILURE); }
 
   #ifdef FORCE_DEBUG
   printf("date from string 2: %04d (Y), %02d (M), %02d (D), %03d (DOY), %02d (W), %d (CE)\n",
