@@ -12,7 +12,6 @@ extern "C" {
 
 // abbreviated datatypes
 typedef unsigned short int ushort;
-typedef unsigned char small;
 
 // pi
 #ifndef M_PI

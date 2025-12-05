@@ -40,7 +40,7 @@ DINSTALL=$(HOME)/bin
 ### TARGETS
 
 all: temp exe
-utils: alloc date dir quality stats string
+utils: alloc date dir image_io quality stats string
 exe: disturbance_detection spectral_index
 .PHONY: temp all install install_ clean check
 
@@ -64,6 +64,9 @@ dir: temp $(DUTILS)/dir.c
 quality: temp $(DUTILS)/quality.c
 	$(GCC) $(CFLAGS) -c $(DUTILS)/quality.c -o $(DMOD)/quality.o
 
+image_io: temp $(DUTILS)/image_io.c
+	$(GCC) $(CFLAGS) $(GDAL) -c $(DUTILS)/image_io.c -o $(DMOD)/image_io.o
+
 stats: temp $(DUTILS)/stats.c
 	$(GCC) $(CFLAGS) -c $(DUTILS)/stats.c -o $(DMOD)/stats.o
 
@@ -74,10 +77,10 @@ string: temp $(DUTILS)/string.c
 ### EXECUTABLES
 
 disturbance_detection: temp utils $(DMAIN)/disturbance_detection.c
-	$(GCC) $(CFLAGS) $(GDAL) -o $(DBIN)/disturbance_detection $(DMAIN)/disturbance_detection.c $(DMOD)/*.o $(LDGDAL)
+	$(GCC) $(CFLAGS) $(GDAL) -o $(DBIN)/disturbance_detection $(DMAIN)/disturbance_detection.c $(DMOD)/*.o $(LDGDAL) -lm
 
 spectral_index: temp utils $(DMAIN)/spectral_index.c
-	$(GCC) $(CFLAGS) $(GDAL) -o $(DBIN)/spectral_index $(DMAIN)/spectral_index.c $(DMOD)/*.o $(LDGDAL)
+	$(GCC) $(CFLAGS) $(GDAL) -o $(DBIN)/spectral_index $(DMAIN)/spectral_index.c $(DMOD)/*.o $(LDGDAL) -lm
 
 temporal_variability: temp utils $(DMAIN)/temporal_variability.c
 	$(GCC) $(CFLAGS) $(GDAL) -o $(DBIN)/temporal_variability $(DMAIN)/temporal_variability.c $(DMOD)/*.o $(LDGDAL) -lm
