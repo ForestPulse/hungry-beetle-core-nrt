@@ -11,12 +11,13 @@
 #include "utils/alloc.h"
 #include "utils/const.h"
 #include "utils/dir.h"
+#include "utils/image_io.h"
 #include "utils/string.h"
 #include "utils/stats.h"
 
 typedef struct {
   int n_images;
-  char **path_images;
+  char **path_input;
   char path_output[STRLEN];
 } args_t;
 
@@ -67,11 +68,11 @@ int opt, received_n = 0, expected_n = 1;
     usage(argv[0], FAILURE);
   }
 
-  alloc_2D((void***)&args->path_images, args->n_images, STRLEN, sizeof(char));
+  alloc_2D((void***)&args->path_input, args->n_images, STRLEN, sizeof(char));
   for (int i=0; i<args->n_images; i++){
-    copy_string(args->path_images[i], STRLEN, argv[optind + i]);
-    if (!fileexist(args->path_images[i])){
-      fprintf(stderr, "Input file %s does not exist.\n", args->path_images[i]);
+    copy_string(args->path_input[i], STRLEN, argv[optind + i]);
+    if (!fileexist(args->path_input[i])){
+      fprintf(stderr, "Input file %s does not exist.\n", args->path_input[i]);
       usage(argv[0], FAILURE);
     }
   }
@@ -89,142 +90,53 @@ int opt, received_n = 0, expected_n = 1;
 
 int main ( int argc, char *argv[] ){
 args_t args;
-
+image_t *input;
+image_t variability;
 
   parse_args(argc, argv, &args);
 
   GDALAllRegister();
 
-
-  GDALDatasetH  fp_image;
-  if ((fp_image = GDALOpen(args.path_images[0], GA_ReadOnly))== NULL){ 
-    fprintf(stderr, "could not open %s\n", args.path_images[0]); exit(FAILURE);}
-
-  int nx = GDALGetRasterXSize(fp_image);
-  int ny = GDALGetRasterYSize(fp_image);
-  int nc = nx*ny;
-
-  char proj[STRLEN];
-  copy_string(proj, STRLEN, GDALGetProjectionRef(fp_image));
-  
-  double geotran[6];
-  GDALGetGeoTransform(fp_image, geotran);
-
-  GDALClose(fp_image);
-
-
-  short **images = NULL;
-  short *nodata_images = NULL;
-  alloc_2D((void***)&images, args.n_images, nc, sizeof(short));
-  alloc((void**)&nodata_images, args.n_images, sizeof(short));
+  alloc((void**)&input, args.n_images, sizeof(image_t));
 
   for (int i=0; i<args.n_images; i++){
 
-    if ((fp_image = GDALOpen(args.path_images[i], GA_ReadOnly))== NULL){ 
-      fprintf(stderr, "could not open %s\n", args.path_images[i]); exit(FAILURE);}
+    read_image(args.path_input[i], NULL, &input[i]);
 
-    if (nx != GDALGetRasterXSize(fp_image)){
-      fprintf(stderr, "dimension mismatch between %s and %s\n", args.path_images[0], args.path_images[i]); exit(FAILURE);}
-    if (ny != GDALGetRasterYSize(fp_image)){
-      fprintf(stderr, "dimension mismatch between %s and %s\n", args.path_images[0], args.path_images[i]); exit(FAILURE);}
-
-    if (strcmp(proj, GDALGetProjectionRef(fp_image)) != 0){
-      fprintf(stderr, "projection mismatch between %s and %s\n", args.path_images[0], args.path_images[i]); exit(FAILURE);}
-
-    {
-      double geotran_image[6];
-      GDALGetGeoTransform(fp_image, geotran_image);
-      for (int k=0; k<6; k++){
-        if (geotran[k] != geotran_image[k]){
-          fprintf(stderr, "geotransform mismatch between %s and %s\n", args.path_images[0], args.path_images[i]); exit(FAILURE);
-        }
-      }
-    }
-
-    {
-      GDALRasterBandH band_image = GDALGetRasterBand(fp_image, 1);
-      int has_nodata;
-      nodata_images[i] = (short)GDALGetRasterNoDataValue(band_image, &has_nodata);
-      if (!has_nodata){
-        fprintf(stderr, "%s has no nodata value.\n", args.path_images[i]); 
-        exit(FAILURE);
-      }
-      if (GDALRasterIO(band_image, GF_Read, 0, 0, 
-        nx, ny, images[i], 
-        nx, ny, GDT_Int16, 0, 0) == CE_Failure){
-        printf("could not read band 1 from %s.\n", args.path_images[i]); exit(FAILURE);}
-    }
-  
-    GDALClose(fp_image);
+    if (i > 0) compare_images(&input[0], &input[i]);
 
   }
 
+  copy_image(&input[0], &variability, 1, SHRT_MIN, args.path_output);
 
-  short nodata_variability = SHRT_MIN;
-  short *variability = NULL;
-  alloc((void**)&variability, nc, sizeof(short));
+  for (int p=0; p<variability.nc; p++){
 
-  for (int p=0; p<nc; p++){
-
-    variability[p] = nodata_variability;
+    variability.data[0][p] = variability.nodata;
     
     double mean = 0, var = 0, n = 0;
   
     for (int i=0; i<args.n_images; i++){
 
-      if (images[i][p] == nodata_images[i]) continue;
+      if (input[i].data[0][p] == input[i].nodata) continue;
 
       // compute mean, variance
       n++;
-      var_recurrence((double)images[i][p], &mean, &var, (double)n);
-
+      var_recurrence((double)input[i].data[0][p], &mean, &var, (double)n);
     }
 
-    if (n > 0) variability[p] = (short)standdev(var, n);
+    if (n > 0) variability.data[0][p] = (short)standdev(var, n);
   
   }
 
-  GDALDatasetH fp_output = NULL;
-  GDALRasterBandH band_output = NULL;
-  GDALDriverH driver = NULL;
-  char **options = NULL;
+  write_image(&variability);
 
-  if ((driver = GDALGetDriverByName("GTiff")) == NULL){
-    printf("%s driver not found\n", "GTiff"); exit(FAILURE);}
-
-  options = CSLSetNameValue(options, "COMPRESS", "ZSTD");
-  options = CSLSetNameValue(options, "PREDICTOR", "2");
-  options = CSLSetNameValue(options, "INTERLEAVE", "BAND");
-  options = CSLSetNameValue(options, "BIGTIFF", "YES");
-  options = CSLSetNameValue(options, "TILED", "YES");
-  options = CSLSetNameValue(options, "BLOCKXSIZE", "256");
-  options = CSLSetNameValue(options, "BLOCKYSIZE", "256");
-
-  if ((fp_output = GDALCreate(driver, args.path_output, nx, ny, 1, GDT_Int16, options)) == NULL){
-    printf("Error creating file %s.\n", args.path_output); exit(FAILURE);}
-
-  band_output = GDALGetRasterBand(fp_output, 1);
-  if (GDALRasterIO(band_output, GF_Write, 0, 0, 
-    nx, ny, variability, 
-    nx, ny, GDT_Int16, 0, 0) == CE_Failure){
-    printf("Unable to write %s.\n", args.path_output); 
-    exit(FAILURE);
+  for (int i=0; i<args.n_images; i++){
+    free_image(&input[i]);
   }
-
-  GDALSetDescription(band_output, "Temporal Variability");
-  GDALSetRasterNoDataValue(band_output, nodata_variability);
-
-  GDALSetGeoTransform(fp_output, geotran);
-  GDALSetProjection(fp_output,   proj);
-
-  GDALClose(fp_output);
-
-  free((void*)variability);
-  free_2D((void**)images, args.n_images);
-  free((void*)nodata_images);
-  free_2D((void**)args.path_images, args.n_images);
+  free((void*)input);
+  free_image(&variability);
+  free_2D((void**)args.path_input, args.n_images);
   
-  if (options != NULL) CSLDestroy(options);   
   GDALDestroy();
 
   exit(SUCCESS);
