@@ -46,7 +46,7 @@ DINSTALL=$(HOME)/bin
 
 all: temp exe
 utils: alloc date dir harmonic image_io quality stats string
-exe: spectral_index temporal_variability reference_period # disturbance_detection
+exe: spectral_index temporal_variability reference_period disturbance_detection update_mask
 .PHONY: temp all install install_ clean check
 
 ### TEMP
@@ -67,7 +67,7 @@ dir: temp $(DUTILS)/dir.c
 	$(GCC) $(CFLAGS) -c $(DUTILS)/dir.c -o $(DMOD)/dir.o
 
 harmonic: temp $(DUTILS)/harmonic.c
-	$(GCC) $(CFLAGS) -c $(DUTILS)/harmonic.c -o $(DMOD)/harmonic.o
+	$(GCC) $(CFLAGS) $(GDAL_INCLUDES) $(GDAL_FLAGS) -c $(DUTILS)/harmonic.c -o $(DMOD)/harmonic.o
 
 quality: temp $(DUTILS)/quality.c
 	$(GCC) $(CFLAGS) -c $(DUTILS)/quality.c -o $(DMOD)/quality.o
@@ -95,6 +95,9 @@ temporal_variability: temp utils $(DMAIN)/temporal_variability.c
 
 reference_period: temp utils $(DMAIN)/reference_period.c
 	$(GCC) $(FLAGS) $(INCLUDES) -o $(DBIN)/reference_period $(DMAIN)/reference_period.c $(DMOD)/*.o $(LIBS)
+
+update_mask: temp utils $(DMAIN)/update_mask.c
+	$(GCC) $(FLAGS) $(INCLUDES) -o $(DBIN)/update_mask $(DMAIN)/update_mask.c $(DMOD)/*.o $(LIBS)
 
 ### MISC
 
