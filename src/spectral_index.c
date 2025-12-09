@@ -32,11 +32,11 @@ typedef struct {
 
 void usage(char *exe, int exit_code){
 
-  printf("Usage: %s -r reflectance-image -q quality-image -m mask-image -o output-image\n", exe);
+  printf("Usage: %s -r reflectance-image -q quality-image -x mask-image -o output-image\n", exe);
   printf("\n");
   printf("  -r = reflectance image, FORCE BOA image, either Sentinel-2 or Landsat\n");
   printf("  -q = quality image, FORCE QAI image\n");
-  printf("  -m = mask image\n");
+  printf("  -x = mask image\n");
   printf("  -o = output image\n");
   printf("\n");
   printf("  The spectral index to compute is currently fixed to continuum-removed SWIR1.\n");
@@ -50,7 +50,7 @@ void parse_args(int argc, char *argv[], args_t *args){
 int opt, received_n = 0, expected_n = 4;
   opterr = 0;
 
-  while ((opt = getopt(argc, argv, "r:q:m:o:")) != -1){
+  while ((opt = getopt(argc, argv, "r:q:x:o:")) != -1){
     switch(opt){
       case 'r':
         copy_string(args->path_reflectance, STRLEN, optarg);
@@ -60,7 +60,7 @@ int opt, received_n = 0, expected_n = 4;
         copy_string(args->path_quality, STRLEN, optarg);
         received_n++;
         break;
-      case 'm':
+      case 'x':
         copy_string(args->path_mask, STRLEN, optarg);
         received_n++;
         break;
