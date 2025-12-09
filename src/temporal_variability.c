@@ -7,26 +7,36 @@
 #include "cpl_conv.h"   // various convenience functions for CPL
 #include "cpl_string.h" // various convenience functions for strings
 
+/** OpenMP **/
+#include <omp.h> // multi-platform shared memory multiprocessing
 
 #include "utils/alloc.h"
 #include "utils/const.h"
+#include "utils/date.h"
 #include "utils/dir.h"
 #include "utils/image_io.h"
 #include "utils/string.h"
 #include "utils/stats.h"
 
 typedef struct {
+  int n_cpus;
   int n_images;
   char **path_input;
+  char path_mask[STRLEN];
+  char path_reference[STRLEN];
   char path_output[STRLEN];
 } args_t;
 
 
 void usage(char *exe, int exit_code){
 
-  printf("Usage: %s -o output-image input-image(s)\n", exe);
+  printf("Usage: %s -j cpus -o output-image -x mask-image -r reference-period-image input-image(s)\n", exe);
+  printf("\n");
+  printf("  -j = number of CPUs to use\n");
   printf("\n");
   printf("  -o = output image\n");
+  printf("  -x = mask image\n");
+  printf("  -r = reference period image\n");
   printf("\n");
   printf("  input-image(s) = one or more input images to compute temporal variability from\n");
   printf("\n");
@@ -36,13 +46,25 @@ void usage(char *exe, int exit_code){
 }
 
 void parse_args(int argc, char *argv[], args_t *args){
-int opt, received_n = 0, expected_n = 1;
+int opt, received_n = 0, expected_n = 4;
   opterr = 0;
 
-  while ((opt = getopt(argc, argv, "o:")) != -1){
+  while ((opt = getopt(argc, argv, "j:o:r:x:")) != -1){
     switch(opt){
+      case 'j':
+        args->n_cpus = atoi(optarg);
+        received_n++;
+        break;
       case 'o':
         copy_string(args->path_output, STRLEN, optarg);
+        received_n++;
+        break;
+      case 'r':
+        copy_string(args->path_reference, STRLEN, optarg);
+        received_n++;
+        break;
+      case 'x':
+        copy_string(args->path_mask, STRLEN, optarg);
         received_n++;
         break;
       case '?':
@@ -82,6 +104,16 @@ int opt, received_n = 0, expected_n = 1;
     usage(argv[0], FAILURE);
   }
 
+  if (!fileexist(args->path_reference)){
+    fprintf(stderr, "Reference file %s does not exist.\n", args->path_reference);
+    usage(argv[0], FAILURE);
+  }
+
+  if (args->n_cpus < 1){
+    fprintf(stderr, "Number of CPUs must be at least 1.\n");
+    usage(argv[0], FAILURE);
+  }
+
   return;
 }
 
@@ -90,32 +122,74 @@ int opt, received_n = 0, expected_n = 1;
 
 int main ( int argc, char *argv[] ){
 args_t args;
-image_t *input;
+date_t *dates = NULL;
+image_t *input = NULL;
+image_t mask;
 image_t variability;
+image_t reference;
+
 
   parse_args(argc, argv, &args);
 
   GDALAllRegister();
 
+  read_image(args.path_mask, NULL, &mask);
+  read_image(args.path_reference, NULL, &reference);
+  compare_images(&mask, &reference);
+
   alloc((void**)&input, args.n_images, sizeof(image_t));
+  alloc((void**)&dates, args.n_images, sizeof(date_t));
 
   for (int i=0; i<args.n_images; i++){
-
+  
+    char basename[STRLEN];
+    basename_with_ext(args.path_input[i], basename, STRLEN);
+    date_from_string(&dates[i], basename);
+    
     read_image(args.path_input[i], NULL, &input[i]);
+    compare_images(&mask, &input[i]);
 
-    if (i > 0) compare_images(&input[0], &input[i]);
+    if (i > 0){
+      if (dates[i].ce < dates[i-1].ce){
+        fprintf(stderr, "Input images must be ordered by date (earliest to latest).\n");
+        exit(FAILURE);
+      }
+    }
 
   }
 
-  copy_image(&input[0], &variability, 1, SHRT_MIN, args.path_output);
 
+  enum { start, end };
+  int n_years = 2100; // should be enough, no?
+  int **range = NULL;
+  alloc_2D((void***)&range, n_years, 2, sizeof(int));
+  for (int i=0; i<args.n_images; i++){
+    if (range[dates[i].year][start] == 0) range[dates[i].year][start] = i;
+    if (range[dates[i].year][end] < (i+1)) range[dates[i].year][end] = (i+1);
+  }
+
+  copy_image(&reference, &variability, 1, SHRT_MIN, args.path_output);
+
+  
+  omp_set_num_threads(args.n_cpus);
+
+  #pragma omp parallel shared(input, mask, range, variability, reference) default(none)
+  {
+
+  #pragma omp for
   for (int p=0; p<variability.nc; p++){
 
+    if (mask.data[0][p] == mask.nodata || mask.data[0][p] == 0) continue;
+
     variability.data[0][p] = variability.nodata;
+
+    if (reference.data[0][p] == reference.nodata){
+      continue;
+    }
     
     double mean = 0, var = 0, n = 0;
   
-    for (int i=0; i<args.n_images; i++){
+    for (int i=range[reference.data[0][p]][start]; i<range[reference.data[0][p]][end]; i++){
 
       if (input[i].data[0][p] == input[i].nodata) continue;
 
@@ -128,13 +202,19 @@ image_t variability;
   
   }
 
+  } // end omp parallel region
+
   write_image(&variability);
 
   for (int i=0; i<args.n_images; i++){
     free_image(&input[i]);
   }
   free((void*)input);
+  free_image(&mask);
   free_image(&variability);
+  free_image(&reference);
+  free((void*)dates);
+  free_2D((void**)range, n_years);
   free_2D((void**)args.path_input, args.n_images);
   
   GDALDestroy();
