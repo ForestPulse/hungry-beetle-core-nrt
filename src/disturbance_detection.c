@@ -7,43 +7,54 @@
 #include "cpl_conv.h"   // various convenience functions for CPL
 #include "cpl_string.h" // various convenience functions for strings
 
+/** OpenMP **/
+#include <omp.h> // multi-platform shared memory multiprocessing
 
 #include "utils/const.h"
 #include "utils/alloc.h"
 #include "utils/date.h"
 #include "utils/dir.h"
+#include "utils/harmonic.h"
+#include "utils/image_io.h"
 #include "utils/string.h"
 
 
 typedef struct {
-  int n;
-  char path_stats[STRLEN];
-  char path_residuals[STRLEN];
-  char file_output[STRLEN];
-  bool counterbreak;
-  float threshold_std;
-  float threshold_min;
-  int direction;
-  int n_consecutive;
+  int n_cpus;
+  int n_images;
+  char **path_input;
+  char path_mask[STRLEN];
+  char path_variability[STRLEN];
+  char path_coefficients[STRLEN];
+  char path_output[STRLEN];
+  int modes;
+  int trend;
+  float threshold_variability;
+  float threshold_residual;
+  int confirmation_number;
 } args_t;
 
 void usage(char *exe, int exit_code){
 
 
-  printf("Usage: %s -j cpus -s path_stats -r path_residuals\n", exe);
-  printf("          -o file_output -c true|false -d threshold_std -m threshold_min -e direction -n number\n");
+  printf("Usage: %s -j cpus -c coefficient-image -s variability-image -x mask-image -o output-image\n", exe);
+  printf("          -m modes -t trend -d threshold_variability -r threshold_residual -n confirmation-number\n");
+  printf("          input-image(s)\n");
   printf("\n");
+  printf("  -j = number of CPUs to use\n");
+  printf("\n");
+  printf("  -x = mask image\n");
+  printf("  -c = path to coefficients\n");
   printf("  -s = path to statistics\n");
-  printf("  -r = path to residuals\n");
   printf("  -o = output file (.tif)\n");
-  printf("  -c = counterbreak (reset counting when starting new year)\n");
-  printf("       true or false\n");
+  printf("\n");  
+  printf("  -m = number of modes for fitting the harmonic model (1-3)\n");
+  printf("  -t = use trend coefficient when fitting the harmonic model? (0 = no, 1 = yes)\n");
   printf("  -d = standard deviation threshold\n");
-  printf("  -m = minimum residuum threshold\n");
-  printf("  -e = direction of testing the threshold\n");
-  printf("       +1 for 'greater than' test\n");
-  printf("       -1 for 'less than' test\n");
-  printf("   -n = number of consecutive observations to detect disturbance event\n");
+  printf("  -r = minimum residuum threshold\n");
+  printf("  -n = number of consecutive observations to detect disturbance event\n");
+  printf("\n");
+  printf("  input-image(s) = input images to compute disturbances from\n");
   printf("\n");
 
   exit(exit_code);
@@ -51,61 +62,50 @@ void usage(char *exe, int exit_code){
 }
 
 void parse_args(int argc, char *argv[], args_t *args){
-int opt, received_n = 0, expected_n = 8;
+int opt, received_n = 0, expected_n = 10;
 
   opterr = 0;
 
-  while ((opt = getopt(argc, argv, "s:r:o:d:m:e:c:n:")) != -1){
+  while ((opt = getopt(argc, argv, "j:c:s:o:m:t:d:r:n:x:")) != -1){
     switch(opt){
-      case 's':
-        copy_string(args->path_stats, STRLEN, optarg);
-        received_n++;
-        break;
-      case 'r':
-        copy_string(args->path_residuals, STRLEN, optarg);
-        received_n++;
-        break;
-      case 'o':
-        copy_string(args->file_output, STRLEN, optarg);
+      case 'j':
+        args->n_cpus = atoi(optarg);
         received_n++;
         break;
       case 'c':
-        if (strcmp(optarg, "true") == 0){
-          args->counterbreak = true;
-        } else if (strcmp(optarg, "false") == 0){
-          args->counterbreak = false;
-        } else {
-          fprintf(stderr, "counterbreak must be 'true' or 'false'\n");
-          usage(argv[0], FAILURE);  
-        }
+        copy_string(args->path_coefficients, STRLEN, optarg); 
+        received_n++;
+        break;
+      case 's':
+        copy_string(args->path_variability, STRLEN, optarg);
+        received_n++;
+        break;
+      case 'o':
+          copy_string(args->path_output, STRLEN, optarg);
+          received_n++;
+          break;
+      case 'm':
+        args->modes = atoi(optarg);
+        received_n++;
+        break;
+      case 't':
+        args->trend = atoi(optarg);
         received_n++;
         break;
       case 'd':
-        args->threshold_std = atof(optarg);
-        if (args->threshold_std < 1){
-          fprintf(stderr, "threshold_std must be >= 1\n");
-          usage(argv[0], FAILURE);  
-        }
+        args->threshold_variability = atof(optarg);
         received_n++;
         break;
-      case 'm':
-        args->threshold_min = atof(optarg);
-        if (args->threshold_min < 1){
-          fprintf(stderr, "threshold_min must be >= 1\n");
-          usage(argv[0], FAILURE);  
-        }
-        received_n++;
-        break;
-      case 'e':
-        args->direction = atoi(optarg);
+      case 'r':
+        args->threshold_residual = atof(optarg);
         received_n++;
         break;
       case 'n':
-        args->n_consecutive = atoi(optarg);
-        if (args->n_consecutive < 1){
-          fprintf(stderr, "n_consecutive must be >= 1\n");
-          usage(argv[0], FAILURE);
-        }
+        args->confirmation_number = atoi(optarg);
+        received_n++;
+        break;
+      case 'x':
+        copy_string(args->path_mask, STRLEN, optarg);
         received_n++;
         break;
       case '?':
@@ -126,330 +126,202 @@ int opt, received_n = 0, expected_n = 8;
     usage(argv[0], FAILURE);
   }
 
+  if ((args->n_images = argc - optind) < 1){
+    fprintf(stderr, "At least one input image must be provided.\n");
+    usage(argv[0], FAILURE);
+  }
+
+  alloc_2D((void***)&args->path_input, args->n_images, STRLEN, sizeof(char));
+  for (int i=0; i<args->n_images; i++){
+    copy_string(args->path_input[i], STRLEN, argv[optind + i]);
+    if (!fileexist(args->path_input[i])){
+      fprintf(stderr, "Input file %s does not exist.\n", args->path_input[i]);
+      usage(argv[0], FAILURE);
+    }
+  }
+  
+  if (!fileexist(args->path_coefficients)){
+    fprintf(stderr, "Coefficient file %s does not exist.\n", args->path_coefficients);
+    usage(argv[0], FAILURE);
+  }
+
+  if (!fileexist(args->path_variability)){
+    fprintf(stderr, "Variability file %s does not exist.\n", args->path_variability);
+    usage(argv[0], FAILURE);
+  }
+
+  if (fileexist(args->path_output)){
+    fprintf(stderr, "Output file %s already exists.\n", args->path_output);
+    usage(argv[0], FAILURE);
+  }
+
+  if (args->n_cpus < 1){
+    fprintf(stderr, "Number of CPUs must be at least 1.\n");
+    usage(argv[0], FAILURE);
+  }
+  
+  if (args->modes != 1 && args->modes != 2 && args->modes != 3){
+    fprintf(stderr, "modes must be between 1, 2, or 3.\n");
+    usage(argv[0], FAILURE);
+  }
+
+  if (args->trend != 0 && args->trend != 1){
+    fprintf(stderr, "trend must be 0 (no) or 1 (yes).\n");
+    usage(argv[0], FAILURE);
+  }
+  
+  if (args->threshold_variability == 0){
+    fprintf(stderr, "variabiloity threshold must be non-zero.\n");
+    usage(argv[0], FAILURE);
+  }
+  if (args->threshold_residual == 0){
+    fprintf(stderr, "residual threshold must be non-zero.\n");
+    usage(argv[0], FAILURE);
+  }
+  
+  if (args->confirmation_number < 1){
+    fprintf(stderr, "confirmation number must be at least 1.\n");
+    usage(argv[0], FAILURE);
+  }
+
   return;
-}
-
-
-int list_files(char *input_dir, char *product, dir_t *dir){
-int i;
-dir_t d;
-char ext[STRLEN];
-
-
-  copy_string(d.name, STRLEN, input_dir);
-  printf("scanning %s for files\n", d.name);
-
-  // directory listing
-  if ((d.N = scandir(d.name, &d.LIST, 0, alphasort)) < 0){
-    return FAILURE;}
-
-  printf("found %d files, filtering now\n", d.N);
-
-  // reflectance products
-  alloc_2D((void***)&d.files, d.N, STRLEN, sizeof(char));
-  alloc_2D((void***)&d.paths, d.N, STRLEN, sizeof(char));
-
-  for (i=0, d.n=0; i<d.N; i++){
-
-    // filter expected extensions    
-    extension(d.LIST[i]->d_name, ext, STRLEN);
-    if (strcmp(ext, ".tif")) continue;
-
-    // filter product type
-    if (strstr(d.LIST[i]->d_name, product) == NULL) continue;
-
-    // if we are still here, copy
-    copy_string(d.files[d.n], STRLEN, d.LIST[i]->d_name);
-    concat_string_2(d.paths[d.n], STRLEN, d.name, d.files[d.n], "/");
-    d.n++;
-
-  }
-
-  if (d.n<1){
-    free_2D((void**)d.files, d.N);
-    free_2D((void**)d.paths, d.N);
-    free_2D((void**)d.LIST, d.N);
-    d.files = NULL;
-    d.paths = NULL;
-    d.LIST = NULL;
-    return FAILURE;
-  }
-
-  printf("%d datasets in here. Proceed.\n", d.n);
-
-  *dir = d;
-  return SUCCESS;
-}
-
-
-int get_date(date_t *date, char *bname){
-char cy[5], cm[3], cd[3];
-date_t d;
-int i, number = 0, substring = 0;
-
-
-  for (i=strlen(bname)-1; i>=0; i--){
-
-  
-    if (isdigit(bname[i])){
-
-      number++;
-
-    } else {
-
-      number = 0;
-
-    }
-
-    //printf("%d, %c, %d, %d\n", i, bname[i], number, substring);
-
-    if (number == 8){
-
-      substring = i;
-
-      strncpy(cy, bname+substring,   4); cy[4] = '\0';
-      strncpy(cm, bname+substring+4, 2); cm[2] = '\0';
-      strncpy(cd, bname+substring+6, 2); cd[2] = '\0';
-
-      init_date(&d);
-      set_date(&d, atoi(cy), atoi(cm), atoi(cd));
-      
-      break;
-
-    }
-
-  }
-
-  
- 
-  //printf("date is: %04d (Y), %02d (M), %02d (D), %03d (DOY), %02d (W), %d (CE)\n",
-  //  d.year, d.month, d.day, d.doy, d.week, d.ce);
-
-  if (d.year < 1900   || d.year > 2100)   return FAILURE;
-  if (d.month < 1     || d.month > 12)    return FAILURE;
-  if (d.day < 1       || d.day > 31)      return FAILURE;
-  if (d.doy < 1       || d.doy > 365)     return FAILURE;
-  if (d.week < 1      || d.week > 52)     return FAILURE;
-  if (d.ce < 1900*365 || d.ce > 2100*365) return FAILURE;
-
-  *date = d;
-  
-  return SUCCESS;
 }
 
 
 
 int main ( int argc, char *argv[] ){
 args_t args;
-dir_t files_residuals;
-dir_t files_stats;
-date_t *dates;
-int i, j, nx, ny, nc;
-int d, nd;
+date_t *dates = NULL;
+image_t *input = NULL;
+image_t mask;
+image_t variability;
+image_t coefficients;
+image_t disturbance;
+
 
   parse_args(argc, argv, &args);
 
   GDALAllRegister();
 
 
-  if (list_files(args.path_residuals, "NRT", &files_residuals) == FAILURE){
-    fprintf(stderr, "Could not list files in %s.\n", args.path_residuals);
-  }
+  read_image(args.path_mask, NULL, &mask);
+  read_image(args.path_coefficients, NULL, &coefficients);
+  read_image(args.path_variability, NULL, &variability);
+  compare_images(&mask, &coefficients);
+  compare_images(&mask, &variability);
 
-  if (list_files(args.path_stats, "STM", &files_stats) == FAILURE){
-    fprintf(stderr, "Could not list files in %s.\n", args.path_stats);
-  }
+  alloc((void**)&input, args.n_images, sizeof(image_t));
+  alloc((void**)&dates, args.n_images, sizeof(date_t));
 
-  nd = files_residuals.n;
-  alloc((void**)&dates, nd, sizeof(date_t));
-  for (d=0; d<nd; d++) get_date(&dates[d], files_residuals.files[d]);
+  for (int i=0; i<args.n_images; i++){
 
+    char basename[STRLEN];
+    basename_with_ext(args.path_input[i], basename, STRLEN);
+    date_from_string(&dates[i], basename);
 
+    read_image(args.path_input[i], NULL, &input[i]);
+    compare_images(&coefficients, &input[i]);
 
-
-
-GDALDatasetH  fp_stats;
-GDALDatasetH *fp_residuals;
-GDALRasterBandH band_stats;
-GDALRasterBandH *band_residuals;
-
-
-
-short nodata_stats;
-short *nodata_residuals;
-int has_nodata;
-
-short *detection = NULL;
-short *stats = NULL;
-short **residuals = NULL;
-
-char proj[STRLEN];
-double geotran[6];
-
-
-  if ((fp_stats = GDALOpen(files_stats.paths[0], GA_ReadOnly))== NULL){ 
-    fprintf(stderr, "could not open %s\n", files_stats.files[0]); exit(FAILURE);}
-  band_stats = GDALGetRasterBand(fp_stats, 1);
-
-  nx  = GDALGetRasterXSize(fp_stats);
-  ny  = GDALGetRasterYSize(fp_stats);
-  nc = nx*ny;
-
-  copy_string(proj, STRLEN, GDALGetProjectionRef(fp_stats));
-  GDALGetGeoTransform(fp_stats, geotran);
-
-  nodata_stats = (short)GDALGetRasterNoDataValue(band_stats, &has_nodata);
-  if (!has_nodata){
-    fprintf(stderr, "%s has no nodata value.\n", files_stats.files[0]); 
-    exit(1);
-  }
-
-
-  printf("dimensions: %d x %d x %d\n", ny, nx, nd);
-
-  alloc((void**)&fp_residuals, nd, sizeof(GDALDatasetH));
-  alloc((void**)&band_residuals, nd, sizeof(GDALRasterBandH));
-  alloc((void**)&nodata_residuals, nd, sizeof(short));
-
-  for (d=0; d<nd; d++){
-    printf("open: %s\n", files_residuals.paths[d]);
-    if ((fp_residuals[d] = GDALOpen(files_residuals.paths[d], GA_ReadOnly))== NULL){ 
-      fprintf(stderr, "could not open %s\n", files_residuals.files[d]); exit(FAILURE);}
-    if (nx != GDALGetRasterXSize(fp_residuals[d])){
-      fprintf(stderr, "dimension mismatch between %s and %s\n", files_stats.files[0], files_residuals.files[d]); exit(FAILURE);}
-    if (ny != GDALGetRasterYSize(fp_residuals[d])){
-      fprintf(stderr, "dimension mismatch between %s and %s\n", files_stats.files[0], files_residuals.files[d]); exit(FAILURE);}
-    band_residuals[d] = GDALGetRasterBand(fp_residuals[d], 1);
-    nodata_residuals[d] = (short)GDALGetRasterNoDataValue(band_residuals[d], &has_nodata);
-    if (!has_nodata){
-      fprintf(stderr, "%s has no nodata value.\n", files_residuals.files[d]); 
-      exit(FAILURE);
-  }
-
-  }
-
-  alloc((void**)&detection, nc, sizeof(short));
-  alloc((void**)&stats, nx, sizeof(short));
-  alloc_2D((void***)&residuals, nd, nx, sizeof(short));
-
-bool valid_line;
-bool confirmed;
-int number, candidate;
-
-  for (i=0; i<ny; i++){
-
-    if (GDALRasterIO(band_stats, GF_Read, 0, i, nx, 1, 
-      stats, nx, 1, GDT_Int16, 0, 0) == CE_Failure){
-      printf("could not read line %d.\n", i); exit(FAILURE);}
-
-    for (j=0, valid_line=false; j<nx; j++){
-      if (stats[j] != nodata_stats){
-        valid_line = true;
-        break;
-      } 
-    }
-
-    if (!valid_line) continue;
-    
-
-    for (d=0; d<nd; d++){
-      if (GDALRasterIO(band_residuals[d], GF_Read, 0, i, nx, 1, 
-        residuals[d], nx, 1, GDT_Int16, 0, 0) == CE_Failure){
-        printf("could not read line %d.\n", i); exit(FAILURE);}
-    }
-
-    for (j=0; j<nx; j++){
-
-      if (stats[j] == nodata_stats) continue;
-
-      number = candidate = 0;
-      confirmed = false;
-
-      for (d=0; d<nd; d++){
-
-        if (residuals[d][j] == nodata_residuals[d]) continue;
-
-        // reset counting when starting new year
-        if (args.counterbreak && d > 0 && dates[d].year != dates[d-1].year) number = 0;
-
-        if (
-          (args.direction > 0 && 
-           residuals[d][j] > (args.threshold_std * stats[j]) &&
-           residuals[d][j] > args.threshold_min) ||
-          (args.direction < 0 && 
-           residuals[d][j] < (-1 * args.threshold_std * stats[j]) &&
-           residuals[d][j] < (-1 * args.threshold_min))
-        ){
-          number++;
-          if (number == 1) candidate = d;
-          if (number == args.n_consecutive){
-             confirmed = true;
-             break;
-          }
-        } else {
-          number = 0;
-        }
-
+    if (i > 0){
+      if (dates[i].ce < dates[i-1].ce){
+        fprintf(stderr, "Input images must be ordered by date (earliest to latest).\n");
+        exit(FAILURE);
       }
-
-      if (!confirmed) continue;
-
-      detection[i*nx+j] = dates[candidate].ce - 1970*365;
-
+      if (dates[i].year != dates[i-1].year){
+        fprintf(stderr, "Input images should be from the same year.\n");
+        exit(FAILURE);
+      }
     }
-    
 
   }
 
 
-  GDALClose(fp_stats);
-  for (d=0; d<nd; d++) GDALClose(fp_residuals[d]);
-
-
-GDALDatasetH fp_output = NULL;
-GDALRasterBandH band_output = NULL;
-GDALDriverH driver = NULL;
-char **options = NULL;
-
-  if ((driver = GDALGetDriverByName("GTiff")) == NULL){
-    printf("%s driver not found\n", "GTiff"); exit(FAILURE);}
-
-  options = CSLSetNameValue(options, "COMPRESS", "LZW");
-  options = CSLSetNameValue(options, "PREDICTOR", "2");
-  options = CSLSetNameValue(options, "BIGTIFF", "YES");
-  options = CSLSetNameValue(options, "TILED", "YES");
-
-
-  if ((fp_output = GDALCreate(driver, args.file_output, nx, ny, 1, GDT_Int16, options)) == NULL){
-    printf("Error creating file %s.\n", args.file_output); exit(FAILURE);}
-
-  band_output = GDALGetRasterBand(fp_output, 1);
+  copy_image(&variability, &disturbance, 3, SHRT_MIN, args.path_output);
 
   
-  if (GDALRasterIO(band_output, GF_Write, 0, 0, 
-    nx, ny, detection, 
-    nx, ny, GDT_Int16, 0, 0) == CE_Failure){
-    printf("Unable to write %s.\n", args.file_output); exit(FAILURE);}
+  // pre-compute terms for harmonic fitting
+  int n_coef = number_of_coefficients(args.modes, args.trend);
+  if (n_coef != coefficients.nb){
+    fprintf(stderr, "Number of coefficients in coefficient image does not match the number required by modes and trend settings.\n");
+    exit(FAILURE);
+  }
 
-  GDALSetDescription(band_output, "disturbance detection");
-  GDALSetRasterNoDataValue(band_output, 0);
+  float **terms;
+  alloc_2D((void***)&terms, args.n_images, n_coef, sizeof(float));
+  compute_harmonic_terms(dates, args.n_images, args.modes, args.trend, terms);
 
-printf("WKT: %s\n", proj);
-  GDALSetGeoTransform(fp_output, geotran);
-  GDALSetProjection(fp_output,   proj);
+  omp_set_num_threads(args.n_cpus);
 
-  GDALClose(fp_output);
+  #pragma omp parallel shared(args, dates, input, mask, variability, coefficients, disturbance, n_coef, terms) default(none)
+  {
+
+  for (int p=0; p<disturbance.nc; p++){
+
+    if (mask.data[0][p] == mask.nodata || mask.data[0][p] == 0) continue;
+
+    if (variability.data[0][p] == variability.nodata) continue;
+    if (coefficients.data[0][p] == coefficients.nodata) continue;
 
 
+    int number = 0, candidate = 0;
+    bool confirmed = false;
 
+    for (int i=0; i<args.n_images; i++){
+
+      if (input[i].data[0][p] == input[i].nodata) continue;
+
+      // predict value and compute residual
+      float y_pred = predict_harmonic_value(terms[i], &coefficients, p, n_coef, args.modes, args.trend);
+      float residual = input[i].data[0][p] - y_pred;
+
+
+      if (
+        args.threshold_residual > 0 && 
+        residual > args.threshold_residual &&
+        residual > (args.threshold_variability * variability.data[0][p])){
+        number++;
+      } else if (
+        args.threshold_residual < 0 && 
+        residual < args.threshold_residual &&
+        residual < (args.threshold_variability * variability.data[0][p])){
+        number++;
+      } else {
+        number = 0;
+      }
+
+      if (number == 1) candidate = i;
+      if (number == args.confirmation_number){
+          confirmed = true;
+          break;
+      }
+
+    }
+
+    if (!confirmed) continue;
+
+    disturbance.data[0][p] = dates[candidate].ce - 1970*365;
+    disturbance.data[1][p] = dates[candidate].year;
+    disturbance.data[2][p] = dates[candidate].doy;    
+
+  }
+
+   } // end omp parallel
+
+  write_image(&disturbance);
+
+  
+  for (int i=0; i<args.n_images; i++){
+    free_image(&input[i]);
+  }
+  free((void*)input);
+  free_image(&mask);
+  free_image(&variability);
+  free_image(&coefficients);
   free((void*)dates);
-  free((void*)detection);
-  free((void*)stats);
-  free((void*)fp_residuals);
-  free((void*)band_residuals);
-  free((void*)nodata_residuals);
-  free_2D((void**)residuals, nd);
-  if (options != NULL) CSLDestroy(options);   
+  free_2D((void**)terms, args.n_images);
+  free_2D((void**)args.path_input, args.n_images);
+  
+  GDALDestroy();
 
   return SUCCESS; 
 }
