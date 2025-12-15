@@ -60,9 +60,10 @@ void compute_harmonic_terms(date_t *dates, int n_dates, int modes, int trend, fl
 float predict_harmonic_value(float *x, image_t *coefficients, int pixel, int n_coef, int modes, int trend){
 
   int coef = 0;
+  float y_pred = 0.0;
 
   // offset
-  float y_pred = x[coef++];
+  y_pred = x[coef] * coefficients->data[coef][pixel] / _COEF_SCALE_; coef++;
 
   // trend
   if (trend){
