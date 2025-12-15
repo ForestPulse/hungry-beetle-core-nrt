@@ -255,15 +255,24 @@ image_t disturbance;
   #pragma omp parallel shared(args, dates, input, mask, variability, coefficients, disturbance, n_coef, terms) default(none)
   {
 
+  #pragma omp for
   for (int p=0; p<disturbance.nc; p++){
+//if (p != 1837*disturbance.ny + 1385) continue;
 
     if (mask.data[0][p] == mask.nodata || mask.data[0][p] == 0) continue;
 
     if (variability.data[0][p] == variability.nodata) continue;
     if (coefficients.data[0][p] == coefficients.nodata) continue;
 
+    //printf("pixel %d is valid, proceed:\n", p);
+    //printf("  Variability: %.2f\n", (float)variability.data[0][p]);
+    //for (int b=0; b<coefficients.nb; b++){
+    //  printf("  Coefficient %d: %.2f\n", b, (float)coefficients.data[b][p] / _COEF_SCALE_);
+    //}
+    //printf("  Number of images: %d\n", args.n_images);
 
-    int number = 0, candidate = 0;
+    int alert_number = 0, candidate = 0;
+    int revert_number = 0;
     bool confirmed = false;
 
     for (int i=0; i<args.n_images; i++){
@@ -274,25 +283,54 @@ image_t disturbance;
       float y_pred = predict_harmonic_value(terms[i], &coefficients, p, n_coef, args.modes, args.trend);
       float residual = input[i].data[0][p] - y_pred;
 
+      //printf("Pixel %d, Date %d-%03d, ce %d, index %d: Observed = %.2f, Predicted = %.2f, Residual = %.2f\n", 
+      //  p, dates[i].year, dates[i].doy, dates[i].ce, i, (float)input[i].data[0][p], y_pred, residual);
 
-      if (
-        args.threshold_residual > 0 && 
-        residual > args.threshold_residual &&
-        residual > (args.threshold_variability * variability.data[0][p])){
-        number++;
-      } else if (
-        args.threshold_residual < 0 && 
-        residual < args.threshold_residual &&
-        residual < (args.threshold_variability * variability.data[0][p])){
-        number++;
-      } else {
-        number = 0;
-      }
+      if (!confirmed){
+        // not yet confirmed, check and potentially raise alert
+        //printf("  Not yet confirmed.\n");
+        if (
+          args.threshold_residual > 0 && 
+          residual > args.threshold_residual &&
+          residual > (args.threshold_variability * variability.data[0][p])){
+          alert_number++;
+        } else if (
+          args.threshold_residual < 0 && 
+          residual < args.threshold_residual &&
+          residual < (args.threshold_variability * variability.data[0][p])){
+          alert_number++;
+        } else {
+          alert_number = 0;
+        }
 
-      if (number == 1) candidate = i;
-      if (number == args.confirmation_number){
+        if (alert_number == 1) candidate = i;
+        if (alert_number == args.confirmation_number){
           confirmed = true;
-          break;
+          //break;
+        }
+        //printf("  candidate: %d, Alert counter: %d, revert counter: %d\n", candidate, alert_number, revert_number);
+      } else {
+        // already confirmed, check for reversion
+        //printf("  Already confirmed.\n");
+        if (
+          args.threshold_residual > 0 && 
+          residual < (args.threshold_residual / 2)){
+          revert_number++;
+        } else if (
+          args.threshold_residual < 0 && 
+          residual > (args.threshold_residual / 2)){
+          revert_number++;
+        } else {
+          revert_number = 0;
+        }
+
+        if (revert_number == args.confirmation_number){
+          // disturbance reverted
+          confirmed = false;
+          alert_number = 0;
+          revert_number = 0;
+        }
+        //printf("  candidate: %d, Alert counter: %d, revert counter: %d\n", candidate, alert_number, revert_number);
       }
 
     }
