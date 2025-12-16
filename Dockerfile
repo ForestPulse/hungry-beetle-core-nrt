@@ -32,7 +32,7 @@ RUN echo "building hungry-beetle" && \
   make && \
   make DINSTALL=$INSTALL_DIR install 
 
-FROM ghcr.io/forestpulse/hungry-beetle-core:latest AS final
+FROM ghcr.io/forestpulse/hungry-beetle-core-nrt:latest AS final
 
 COPY --chown=docker:docker --from=builder $INSTALL_DIR $HOME/bin
 
@@ -43,4 +43,4 @@ USER docker
 ENV HOME=/home/docker
 ENV PATH="$PATH:/home/docker/bin"
 WORKDIR /home/docker
-CMD ["disturbance_detection"]
+CMD ["echo 'beetle hungry, nom nom'"]
