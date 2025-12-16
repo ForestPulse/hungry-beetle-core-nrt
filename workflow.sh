@@ -55,11 +55,11 @@ for this_year in {2018..2025}; do
     ${out_dir}/*_CREM.tif
 
   # Compute temporal variability from previous year's data
-  time ${bin_dir}/temporal_variability -j 64 \
-    -o ${out_dir}/variability_${prev_year}.tif \
-    -r ${out_dir}/reference_period_${prev_year}.tif \
-    -x ${out_dir}/mask_${prev_year}.tif \
-    ${out_dir}/*_CREM.tif
+  #time ${bin_dir}/temporal_variability -j 64 \
+  #  -o ${out_dir}/variability_${prev_year}.tif \
+  #  -r ${out_dir}/reference_period_${prev_year}.tif \
+  #  -x ${out_dir}/mask_${prev_year}.tif \
+  #  ${out_dir}/*_CREM.tif
 
   # Now compute the indices for the current year
   boa_files=$(ls ${cube_dir}/${tile}/${this_year}*SEN2[ABC]*BOA.tif | tr '\n' ' ')
