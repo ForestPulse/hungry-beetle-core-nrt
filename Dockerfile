@@ -35,7 +35,8 @@ RUN echo "building hungry-beetle" && \
 
 FROM ghcr.io/forestpulse/hungry-beetle-core-nrt:latest AS final
 
-COPY --from=builder /usr/local/lib/R/site-library /usr/local/lib/R/site-library
+# R is already included in the final image (two-step-build), as well as required packages
+#COPY --from=builder /usr/local/lib/R/site-library /usr/local/lib/R/site-library
 COPY --chown=docker:docker --from=builder $INSTALL_DIR $HOME/bin
 
 RUN rm -rf $SOURCE_DIR $INSTALL_DIR
