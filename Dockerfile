@@ -31,15 +31,14 @@ mkdir -p /home/docker/bin && chown docker /home/docker/bin
 # Build, install
 RUN echo "building hungry-beetle" && \
   make && \
-  make DINSTALL=$INSTALL_DIR install 
+  make DINSTALL=$INSTALL_DIR install  && \
+  rm -r $SOURCE_DIR
 
 FROM ghcr.io/forestpulse/hungry-beetle-core-nrt:latest AS final
 
 # R is already included in the final image (two-step-build), as well as required packages
 #COPY --from=builder /usr/local/lib/R/site-library /usr/local/lib/R/site-library
 COPY --chown=docker:docker --from=builder $INSTALL_DIR $HOME/bin
-
-RUN rm -rf $SOURCE_DIR $INSTALL_DIR
 
 # Use this user by default
 USER docker
