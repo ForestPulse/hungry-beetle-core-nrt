@@ -15,9 +15,11 @@ COPY . .
 RUN apt-get -y update && apt-get -y upgrade && \
 apt-get -y install \
   build-essential \
+  libgsl0-dev \
   r-base && \
-Rscript -e "install.packages('pak', repos='https://r-lib.github.io/p/pak/dev/')" && \
-Rscript -e "pak::pkg_install(c('rmarkdown','plotly', 'dplyr', 'terra'))" && \
+  # install R packages
+  Rscript -e "install.packages('pak', repos='https://r-lib.github.io/p/pak/dev/')" && \
+  Rscript -e "pak::pkg_install(c('rmarkdown','plotly', 'dplyr', 'terra'))" && \
 apt-get clean && rm -r /var/cache/
 
 # Create a dedicated 'docker' group and user
@@ -32,11 +34,12 @@ RUN echo "building hungry-beetle" && \
   make && \
   make DINSTALL=$INSTALL_DIR install 
 
-FROM ghcr.io/forestpulse/hungry-beetle-core-nrt:latest AS final
+#FROM ghcr.io/forestpulse/hungry-beetle-core-nrt:latest AS final
 
-COPY --chown=docker:docker --from=builder $INSTALL_DIR $HOME/bin
+#COPY --from=builder /usr/local/lib/R/site-library /usr/local/lib/R/site-library
+#COPY --chown=docker:docker --from=builder $INSTALL_DIR $HOME/bin
 
-RUN rm -rf $SOURCE_DIR $INSTALL_DIR
+#RUN rm -rf $SOURCE_DIR $INSTALL_DIR
 
 # Use this user by default
 USER docker
