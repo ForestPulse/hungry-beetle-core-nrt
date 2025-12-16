@@ -17,176 +17,7 @@
 #include "utils/harmonic.h"
 #include "utils/image_io.h"
 #include "utils/string.h"
-
-
-typedef struct {
-  int n_cpus;
-  int n_images;
-  char **path_input;
-  char path_mask[STRLEN];
-  char path_variability[STRLEN];
-  char path_coefficients[STRLEN];
-  char path_output[STRLEN];
-  int modes;
-  int trend;
-  float threshold_variability;
-  float threshold_residual;
-  int confirmation_number;
-} args_t;
-
-void usage(char *exe, int exit_code){
-
-
-  printf("Usage: %s -j cpus -c coefficient-image -s variability-image -x mask-image -o output-image\n", exe);
-  printf("          -m modes -t trend -d threshold_variability -r threshold_residual -n confirmation-number\n");
-  printf("          input-image(s)\n");
-  printf("\n");
-  printf("  -j = number of CPUs to use\n");
-  printf("\n");
-  printf("  -x = mask image\n");
-  printf("  -c = path to coefficients\n");
-  printf("  -s = path to statistics\n");
-  printf("  -o = output file (.tif)\n");
-  printf("\n");  
-  printf("  -m = number of modes for fitting the harmonic model (1-3)\n");
-  printf("  -t = use trend coefficient when fitting the harmonic model? (0 = no, 1 = yes)\n");
-  printf("  -d = standard deviation threshold\n");
-  printf("  -r = minimum residuum threshold\n");
-  printf("  -n = number of consecutive observations to detect disturbance event\n");
-  printf("\n");
-  printf("  input-image(s) = input images to compute disturbances from\n");
-  printf("\n");
-
-  exit(exit_code);
-  return;
-}
-
-void parse_args(int argc, char *argv[], args_t *args){
-int opt, received_n = 0, expected_n = 10;
-
-  opterr = 0;
-
-  while ((opt = getopt(argc, argv, "j:c:s:o:m:t:d:r:n:x:")) != -1){
-    switch(opt){
-      case 'j':
-        args->n_cpus = atoi(optarg);
-        received_n++;
-        break;
-      case 'c':
-        copy_string(args->path_coefficients, STRLEN, optarg); 
-        received_n++;
-        break;
-      case 's':
-        copy_string(args->path_variability, STRLEN, optarg);
-        received_n++;
-        break;
-      case 'o':
-          copy_string(args->path_output, STRLEN, optarg);
-          received_n++;
-          break;
-      case 'm':
-        args->modes = atoi(optarg);
-        received_n++;
-        break;
-      case 't':
-        args->trend = atoi(optarg);
-        received_n++;
-        break;
-      case 'd':
-        args->threshold_variability = atof(optarg);
-        received_n++;
-        break;
-      case 'r':
-        args->threshold_residual = atof(optarg);
-        received_n++;
-        break;
-      case 'n':
-        args->confirmation_number = atoi(optarg);
-        received_n++;
-        break;
-      case 'x':
-        copy_string(args->path_mask, STRLEN, optarg);
-        received_n++;
-        break;
-      case '?':
-        if (isprint(optopt)){
-          fprintf(stderr, "Unknown option `-%c'.\n", optopt);
-        } else {
-          fprintf(stderr, "Unknown option character `\\x%x'.\n", optopt);
-        }
-        usage(argv[0], FAILURE);
-      default:
-        fprintf(stderr, "Error parsing arguments.\n");
-        usage(argv[0], FAILURE);
-    }
-  }
-
-  if (received_n != expected_n){
-    fprintf(stderr, "Not all arguments received.\n");
-    usage(argv[0], FAILURE);
-  }
-
-  if ((args->n_images = argc - optind) < 1){
-    fprintf(stderr, "At least one input image must be provided.\n");
-    usage(argv[0], FAILURE);
-  }
-
-  alloc_2D((void***)&args->path_input, args->n_images, STRLEN, sizeof(char));
-  for (int i=0; i<args->n_images; i++){
-    copy_string(args->path_input[i], STRLEN, argv[optind + i]);
-    if (!fileexist(args->path_input[i])){
-      fprintf(stderr, "Input file %s does not exist.\n", args->path_input[i]);
-      usage(argv[0], FAILURE);
-    }
-  }
-  
-  if (!fileexist(args->path_coefficients)){
-    fprintf(stderr, "Coefficient file %s does not exist.\n", args->path_coefficients);
-    usage(argv[0], FAILURE);
-  }
-
-  if (!fileexist(args->path_variability)){
-    fprintf(stderr, "Variability file %s does not exist.\n", args->path_variability);
-    usage(argv[0], FAILURE);
-  }
-
-  if (fileexist(args->path_output)){
-    fprintf(stderr, "Output file %s already exists.\n", args->path_output);
-    usage(argv[0], FAILURE);
-  }
-
-  if (args->n_cpus < 1){
-    fprintf(stderr, "Number of CPUs must be at least 1.\n");
-    usage(argv[0], FAILURE);
-  }
-  
-  if (args->modes != 1 && args->modes != 2 && args->modes != 3){
-    fprintf(stderr, "modes must be between 1, 2, or 3.\n");
-    usage(argv[0], FAILURE);
-  }
-
-  if (args->trend != 0 && args->trend != 1){
-    fprintf(stderr, "trend must be 0 (no) or 1 (yes).\n");
-    usage(argv[0], FAILURE);
-  }
-  
-  if (args->threshold_variability == 0){
-    fprintf(stderr, "variabiloity threshold must be non-zero.\n");
-    usage(argv[0], FAILURE);
-  }
-  if (args->threshold_residual == 0){
-    fprintf(stderr, "residual threshold must be non-zero.\n");
-    usage(argv[0], FAILURE);
-  }
-  
-  if (args->confirmation_number < 1){
-    fprintf(stderr, "confirmation number must be at least 1.\n");
-    usage(argv[0], FAILURE);
-  }
-
-  return;
-}
-
+#include "args/args_disturbance_detection.h"
 
 
 int main ( int argc, char *argv[] ){
@@ -252,7 +83,9 @@ image_t disturbance;
 
   omp_set_num_threads(args.n_cpus);
 
-  #pragma omp parallel shared(args, dates, input, mask, variability, coefficients, disturbance, n_coef, terms) default(none)
+  int n_pixels = 0, n_alert = 0, n_reversed = 0, n_detected = 0;
+
+  #pragma omp parallel shared(args, dates, input, mask, variability, coefficients, disturbance, n_coef, terms) reduction(+: n_pixels, n_alert, n_reversed, n_detected) default(none)
   {
 
   #pragma omp for
@@ -261,8 +94,10 @@ image_t disturbance;
 
     if (mask.data[0][p] == mask.nodata || mask.data[0][p] == 0) continue;
 
-    if (variability.data[0][p] == variability.nodata) continue;
-    if (coefficients.data[0][p] == coefficients.nodata) continue;
+    if (variability.data[1][p] == variability.nodata) continue;
+    if (coefficients.data[1][p] == coefficients.nodata) continue;
+
+    n_pixels++;
 
     //printf("pixel %d is valid, proceed:\n", p);
     //printf("  Variability: %.2f\n", (float)variability.data[0][p]);
@@ -292,13 +127,15 @@ image_t disturbance;
         if (
           args.threshold_residual > 0 && 
           residual > args.threshold_residual &&
-          residual > (args.threshold_variability * variability.data[0][p])){
+          residual > (args.threshold_variability * variability.data[1][p])){
           alert_number++;
+          //printf(" -> alert %d raised. Residual: %f, variability: %d\n", alert_number, residual, variability.data[1][p]);
         } else if (
           args.threshold_residual < 0 && 
           residual < args.threshold_residual &&
-          residual < (args.threshold_variability * variability.data[0][p])){
+          residual < (args.threshold_variability * variability.data[1][p])){
           alert_number++;
+          //printf(" -> alert %d raised. Residual: %f, variability: %d\n", alert_number, residual, variability.data[1][p]);
         } else {
           alert_number = 0;
         }
@@ -306,6 +143,7 @@ image_t disturbance;
         if (alert_number == 1) candidate = i;
         if (alert_number == args.confirmation_number){
           confirmed = true;
+          n_alert++;
           //break;
         }
         //printf("  candidate: %d, Alert counter: %d, revert counter: %d\n", candidate, alert_number, revert_number);
@@ -327,6 +165,7 @@ image_t disturbance;
         if (revert_number == args.confirmation_number){
           // disturbance reverted
           confirmed = false;
+          n_reversed++;
           alert_number = 0;
           revert_number = 0;
         }
@@ -337,6 +176,8 @@ image_t disturbance;
 
     if (!confirmed) continue;
 
+    n_detected++;
+
     disturbance.data[0][p] = dates[candidate].ce - 1970*365;
     disturbance.data[1][p] = dates[candidate].year;
     disturbance.data[2][p] = dates[candidate].doy;    
@@ -344,6 +185,10 @@ image_t disturbance;
   }
 
    } // end omp parallel
+
+  printf("Alerts were produced for %d out of %d pixels, i.e. %.2f%%.\n", n_alert, n_pixels, 100.0 * n_alert / n_pixels);
+  printf("Alerts were reversed for %d out of %d pixels, i.e. %.2f%%.\n", n_reversed, n_pixels, 100.0 * n_reversed / n_pixels);
+  printf("Disturbances were detected for %d out of %d pixels, i.e. %.2f%%.\n", n_detected, n_pixels, 100.0 * n_detected / n_pixels);
 
   write_image(&disturbance);
 

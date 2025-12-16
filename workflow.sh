@@ -4,7 +4,7 @@ tile="X0055_Y0053"
 cube_dir="/nvme2/ahsoka/gi-sds/testdata"
 mask_dir="/data/ahsoka/eocp/borkenkaefer/forst"
 mask="forest.tif"
-out_dir="$HOME/temp/beetle-with-reverse-2"
+out_dir="$HOME/temp/beetle-with-reverse-5"
 
 bin_dir="src/temp/bin"
 
@@ -32,7 +32,9 @@ for this_year in {2015..2017}; do
     -o ${out_dir}/{1/.}_CREM.tif \
     ::: $boa_files ::: $qai_files
 
+
 done
+
 
 
 for this_year in {2018..2025}; do
@@ -49,7 +51,7 @@ for this_year in {2018..2025}; do
     -i ${out_dir}/coefficients_${before_prev_year}.tif \
     -c ${out_dir}/coefficients_${prev_year}.tif \
     -x ${out_dir}/mask_${prev_year}.tif \
-    -m 3 -t 0 -e 2017 -y ${prev_year} -s 200 -n 3\
+    -m 3 -t 0 -y ${prev_year} -s 200 -n 3\
     ${out_dir}/*_CREM.tif
 
   # Compute temporal variability from previous year's data
@@ -69,13 +71,14 @@ for this_year in {2018..2025}; do
     -o ${out_dir}/{1/.}_CREM.tif \
     ::: $boa_files ::: $qai_files
 
+#-s ${out_dir}/variability_${prev_year}.tif \
   # Finally, detect disturbances for the current year
   time ${bin_dir}/disturbance_detection -j 64 \
     -c ${out_dir}/coefficients_${prev_year}.tif \
-    -s ${out_dir}/variability_${prev_year}.tif \
+    -s ${out_dir}/reference_period_${prev_year}.tif \
     -x ${out_dir}/mask_${prev_year}.tif \
     -o ${out_dir}/disturbance_${this_year}.tif \
-    -m 3 -t 0 -d 3 -r 500 -n 3 \
+    -m 3 -t 0 -d 5 -r 500 -n 3 \
     ${out_dir}/${this_year}*_CREM.tif
 
   time ${bin_dir}/update_mask \

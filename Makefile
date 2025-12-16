@@ -38,6 +38,7 @@ DMAIN=src
 DUTILS=src/utils
 DTMP=src/temp
 DMOD=src/temp/modules
+DARG=src/temp/modules/args
 DBIN=src/temp/bin
 DMISC=misc
 DINSTALL=$(HOME)/bin
@@ -46,13 +47,14 @@ DINSTALL=$(HOME)/bin
 
 all: temp exe
 utils: alloc date dir harmonic image_io quality stats string
+args: args_spectral_index args_reference_period args_disturbance_detection args_temporal_variability args_combine_disturbances args_update_mask
 exe: spectral_index temporal_variability reference_period disturbance_detection update_mask combine_disturbances
 .PHONY: temp all install install_ clean check
 
 ### TEMP
 
 temp:
-	mkdir -p $(DTMP) $(DMOD) $(DBIN)
+	mkdir -p $(DTMP) $(DMOD) $(DARG) $(DBIN)
 
 
 ### UTILS COMPILE UNITS
@@ -82,25 +84,46 @@ string: temp $(DUTILS)/string.c
 	$(GCC) $(CFLAGS) -c $(DUTILS)/string.c -o $(DMOD)/string.o
 
 
+### ARG PARSING UNITS
+args_reference_period: temp $(DMAIN)/args/args_reference_period.c
+	$(GCC) $(CFLAGS) -c $(DMAIN)/args/args_reference_period.c -o $(DARG)/args_reference_period.o
+
+args_disturbance_detection: temp $(DMAIN)/args/args_disturbance_detection.c
+	$(GCC) $(CFLAGS) -c $(DMAIN)/args/args_disturbance_detection.c -o $(DARG)/args_disturbance_detection.o
+
+args_spectral_index: temp $(DMAIN)/args/args_spectral_index.c
+	$(GCC) $(CFLAGS) -c $(DMAIN)/args/args_spectral_index.c -o $(DARG)/args_spectral_index.o
+
+args_temporal_variability: temp $(DMAIN)/args/args_temporal_variability.c
+	$(GCC) $(CFLAGS) -c $(DMAIN)/args/args_temporal_variability.c -o $(DARG)/args_temporal_variability.o
+
+args_combine_disturbances: temp $(DMAIN)/args/args_combine_disturbances.c
+	$(GCC) $(CFLAGS) -c $(DMAIN)/args/args_combine_disturbances.c -o $(DARG)/args_combine_disturbances.o
+
+args_update_mask: temp $(DMAIN)/args/args_update_mask.c
+	$(GCC) $(CFLAGS) -c $(DMAIN)/args/args_update_mask.c -o $(DARG)/args_update_mask.o
+
+
 ### EXECUTABLES
 
-disturbance_detection: temp utils $(DMAIN)/disturbance_detection.c
-	$(GCC) $(FLAGS) $(INCLUDES) -o $(DBIN)/disturbance_detection $(DMAIN)/disturbance_detection.c $(DMOD)/*.o $(LIBS)
 
-spectral_index: temp utils $(DMAIN)/spectral_index.c
-	$(GCC) $(FLAGS) $(INCLUDES) -o $(DBIN)/spectral_index $(DMAIN)/spectral_index.c $(DMOD)/*.o $(LIBS)
+disturbance_detection: temp utils args_disturbance_detection $(DMAIN)/disturbance_detection.c
+	$(GCC) $(FLAGS) $(INCLUDES) -o $(DBIN)/disturbance_detection $(DMAIN)/disturbance_detection.c $(DMOD)/*.o $(DARG)/args_disturbance_detection.o $(LIBS)
 
-temporal_variability: temp utils $(DMAIN)/temporal_variability.c
-	$(GCC) $(FLAGS) $(INCLUDES) -o $(DBIN)/temporal_variability $(DMAIN)/temporal_variability.c $(DMOD)/*.o $(LIBS)
+spectral_index: temp utils args_spectral_index $(DMAIN)/spectral_index.c
+	$(GCC) $(FLAGS) $(INCLUDES) -o $(DBIN)/spectral_index $(DMAIN)/spectral_index.c $(DMOD)/*.o $(DARG)/args_spectral_index.o $(LIBS)
 
-reference_period: temp utils $(DMAIN)/reference_period.c
-	$(GCC) $(FLAGS) $(INCLUDES) -o $(DBIN)/reference_period $(DMAIN)/reference_period.c $(DMOD)/*.o $(LIBS)
+temporal_variability: temp utils args_temporal_variability $(DMAIN)/temporal_variability.c
+	$(GCC) $(FLAGS) $(INCLUDES) -o $(DBIN)/temporal_variability $(DMAIN)/temporal_variability.c $(DMOD)/*.o $(DARG)/args_temporal_variability.o $(LIBS)
 
-update_mask: temp utils $(DMAIN)/update_mask.c
-	$(GCC) $(FLAGS) $(INCLUDES) -o $(DBIN)/update_mask $(DMAIN)/update_mask.c $(DMOD)/*.o $(LIBS)
+reference_period: temp utils args_reference_period $(DMAIN)/reference_period.c
+	$(GCC) $(FLAGS) $(INCLUDES) -o $(DBIN)/reference_period $(DMAIN)/reference_period.c $(DMOD)/*.o $(DARG)/args_reference_period.o $(LIBS)
 
-combine_disturbances: temp utils $(DMAIN)/combine_disturbances.c
-	$(GCC) $(FLAGS) $(INCLUDES) -o $(DBIN)/combine_disturbances $(DMAIN)/combine_disturbances.c $(DMOD)/*.o $(LIBS)
+update_mask: temp utils args_update_mask $(DMAIN)/update_mask.c
+	$(GCC) $(FLAGS) $(INCLUDES) -o $(DBIN)/update_mask $(DMAIN)/update_mask.c $(DMOD)/*.o $(DARG)/args_update_mask.o $(LIBS)
+
+combine_disturbances: temp utils args_combine_disturbances $(DMAIN)/combine_disturbances.c
+	$(GCC) $(FLAGS) $(INCLUDES) -o $(DBIN)/combine_disturbances $(DMAIN)/combine_disturbances.c $(DMOD)/*.o $(DARG)/args_combine_disturbances.o $(LIBS)
 
 ### MISC
 

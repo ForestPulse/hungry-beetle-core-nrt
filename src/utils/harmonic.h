@@ -27,7 +27,7 @@ extern "C" {
 int number_of_coefficients(int modes, int trend);
 void compute_harmonic_terms(date_t *dates, int n_dates, int modes, int trend, float **terms);
 float predict_harmonic_value(float *x, image_t *coefficients, int pixel, int n_coef, int modes, int trend);
-int irls_fit(const gsl_matrix *X, const gsl_vector *y, gsl_vector *c, gsl_matrix *cov);
+double irls_fit(const gsl_matrix *X, const gsl_vector *y, gsl_vector *c, gsl_matrix *cov);
 
 #ifdef __cplusplus
 }
