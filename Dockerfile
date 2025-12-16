@@ -15,7 +15,7 @@ COPY . .
 RUN apt-get -y update && apt-get -y upgrade && \
 apt-get -y install \
   build-essential && \
-#  libgsl0-dev \ # GSL is already included in the final image (two-step-build)
+  libgsl0-dev && \
 #  r-base && \ # R is already included in the final image (two-step-build), as well as the following R packages:
 #  Rscript -e "install.packages('pak', repos='https://r-lib.github.io/p/pak/dev/')" && \
 #  Rscript -e "pak::pkg_install(c('rmarkdown','plotly', 'dplyr', 'terra'))" && \
